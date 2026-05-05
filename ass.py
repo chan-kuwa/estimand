@@ -21,7 +21,7 @@ with st.sidebar:
 
     if ai_source == "Gemini (Cloud)":
         # Gemini用のモデル選択
-        model_name = st.selectbox("モデルを選択", ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"])
+        model_name = st.selectbox("モデルを選択", ["gemini-3.0-flash", "gemini-1.5-pro", "gemini-pro"])
         
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if api_key:
