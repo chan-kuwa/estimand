@@ -6,7 +6,7 @@ import os
 # --- ページ設定 ---
 st.set_page_config(page_title="shin-Estimand-Protocol Mapping Tool", layout="wide")
 
-st.title("🧬 TRI Estimand-Protocol Mapping Tool")
+st.title("🧬Estimand-Protocol Mapping Tool")
 st.caption("プロトコルからエスティマンドを成立させる規定をページ数・引用付きで抽出します。AE対応規定も同時に解析します")
 
 # --- サイドバー：設定 ---
