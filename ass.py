@@ -21,7 +21,7 @@ with st.sidebar:
 
     if ai_source == "Gemini (Cloud)":
         # Gemini用のモデル選択
-        model_name = st.selectbox("モデルを選択", ["gemini-3.0-flash"])
+        model_name = st.selectbox("モデルを選択", ["gemini-3-flash-preview"])
         
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if api_key:
@@ -93,7 +93,7 @@ v. 集団レベルでの要約：{sum_val}
 """
                 # AIへのリクエスト
                 if ai_source == "Gemini (Cloud)":
-                    model = genai.GenerativeModel('gemini-3.0-flash') # 最新の推奨モデル名
+                    model = genai.GenerativeModel('gemini-3-flash-preview') 
                     response_text = model.generate_content(prompt).text
                 else:
                     # LM Studioへのリクエスト
