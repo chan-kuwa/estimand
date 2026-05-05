@@ -34,8 +34,7 @@ with st.sidebar:
         # LM Studioは自由記述に設定
         local_url = st.text_input("LM Studio Server URL", "http://localhost:1234/v1")
         
-        # --- ここを自由記述（text_input）に ---
-        model_name = st.text_input("使用するモデルIDを入力", "Llama 3 70B")
+        
         
         st.info("LM StudioでServerを開始し、CORSをEnabledにしてください。")
         client_local = OpenAI(base_url=local_url, api_key="lm-studio")
