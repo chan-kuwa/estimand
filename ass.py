@@ -8,6 +8,7 @@ from openai import OpenAI
 st.set_page_config(page_title="Estimand-Protocol Mapping Tool", layout="wide")
 
 st.title("🧬Estimand-Protocol Mapping Tool")
+ page_icon="estimand.png"
 st.caption("プロトコルからエスティマンドを成立させる規定を抽出します（Gemini / ローカルAI対応）")
 
 # --- サイドバー：設定 ---
