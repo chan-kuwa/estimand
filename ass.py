@@ -4,11 +4,29 @@ import fitz  # PyMuPDF
 import os
 from openai import OpenAI
 
-# --- ページ設定 ---
-st.set_page_config(page_title="Estimand-Protocol Mapping Tool", layout="wide")
+import streamlit as st  # 最初にまとめてインポート
 
-st.title("🧬Estimand-Protocol Mapping Tool")
-page_icon="estimand.png"
+# --- ページ設定（1回だけ、かつ st系で一番最初に書く） ---
+st.set_page_config(
+    page_title="Estimand-Protocol Mapping Tool", 
+    page_icon="estimand.png", 
+    layout="wide"
+)
+
+# --- タイトル部分をカラムで分割 ---
+# [0.1, 0.9] の比率でロゴとタイトルを並べる
+col_logo, col_title = st.columns([0.1, 0.9])
+
+with col_logo:
+    # 画像を表示（widthでサイズ調整）
+    # ファイル名 "estimand.png" がスクリプトと同じフォルダにある必要があります
+    st.image("estimand.png", width=60)
+
+with col_title:
+    # タイトルを表示
+    st.title("Estimand-Protocol Mapping Tool")
+
+# キャプション（説明文）
 st.caption("プロトコルからエスティマンドを成立させる規定を抽出します（Gemini / ローカルAI対応）")
 
 # --- サイドバー：設定 ---
