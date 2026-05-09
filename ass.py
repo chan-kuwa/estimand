@@ -4,6 +4,7 @@ import fitz  # PyMuPDF
 import os
 import pandas as pd
 import requests
+import datetime
 
 # --- ページ設定 ---
 # ブラウザのタブアイコンも指定
@@ -200,35 +201,48 @@ ICH-GCPや一般的RBQM知識による補完は禁止。
 ### 5. 関連プロトコル規定
 ### 5. CTTIのどの原則を参考にしたかの記述とその根拠
 """
+           # --- 結果表示とダウンロード機能（統合版） ---
+if 'res' in st.session_state:
+    # 1. 最初の解析結果を表示
+    st.divider()
+    st.header("📝 プロトコル解析結果")
+    st.markdown(st.session_state['res'])
+    
+    # 2. CTQ深掘りボタン
+    if st.button("🔍 CTQ（信頼性リスク）を深掘りする"):
+        with st.spinner("CTTIフレームワークと照合中..."):
+            # プロンプトの組み立て（ここはご提示の長いプロンプトが入る）
+            ctq_prompt = f"（中略：詳細なCTQ用プロンプト）\n{st.session_state['res']}"
             st.session_state['ctq_res'] = call_ai(ctq_prompt)
+            st.rerun() # ボタンを押した後に再描画して下の表示を更新する
 
+    # 3. CTQの結果がある場合だけ、ここを表示する
     if 'ctq_res' in st.session_state:
         st.divider()
         st.header("🤖 CTQ分析レポート (RBQM分析)")
         st.markdown(st.session_state['ctq_res'])
 
-# ダウンロード用テキストをここで組み立てる（resがあるときのみ実行される）
-    report_content = f"【Estimand-Protocol Mapping Report】\n"
-    report_content += f"生成日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+  # 4. レポート組み立てとダウンロード（ボタンは常に一番下に配置）
+    # resがsession_stateにあることが確定しているこの位置で組み立てる
+    now_dt = datetime.datetime.now()
+
+    # 1. 保存用のテキストを組み立てる
+    report_content = "【Estimand-Protocol Mapping Report】\n"
+    report_content += f"生成日時: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
     report_content += "="*60 + "\n\n"
-    report_content += "■1. プロトコル解析結果\n"
-    report_content += st.session_state['res'] + "\n\n"
+    report_content += "■1. プロトコル解析結果\n" + st.session_state['res'] + "\n\n"
     
+    # ctq_resがある場合のみ中身を合体させる
     if 'ctq_res' in st.session_state:
         report_content += "="*60 + "\n"
-        report_content += "■2. CTQ要因分析 (RBQM)\n"
-        report_content += st.session_state['ctq_res'] + "\n"
+        report_content += "■2. CTQ要因分析 (RBQM)\n" + st.session_state['ctq_res'] + "\n"
 
     st.divider()
     st.subheader("💾 レポートの出力")
     st.download_button(
-        label="📄 解析結果をテキストファイルとしてダウンロード",
+        label="📄 解析結果をテキストでダウンロード",
         data=report_content,
-        file_name=f"Protocol_Analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+        file_name=f"Protocol_Analysis_{now_dt.strftime('%Y%m%d_%H%M')}.txt",
         mime="text/plain"
     )
-
-# 生テキストの確認
-if 'extracted_text' in st.session_state:
-    with st.expander("📄 抽出されたプロトコルテキストを確認"):
-        st.text_area("Protocol Raw Text", st.session_state['extracted_text'], height=200)
+    
