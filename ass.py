@@ -207,14 +207,28 @@ ICH-GCPや一般的RBQM知識による補完は禁止。
         st.header("🤖 CTQ分析レポート (RBQM分析)")
         st.markdown(st.session_state['ctq_res'])
 
-st.download_button(
+# ダウンロード用テキストをここで組み立てる（resがあるときのみ実行される）
+    report_content = f"【Estimand-Protocol Mapping Report】\n"
+    report_content += f"生成日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+    report_content += "="*60 + "\n\n"
+    report_content += "■1. プロトコル解析結果\n"
+    report_content += st.session_state['res'] + "\n\n"
+    
+    if 'ctq_res' in st.session_state:
+        report_content += "="*60 + "\n"
+        report_content += "■2. CTQ要因分析 (RBQM)\n"
+        report_content += st.session_state['ctq_res'] + "\n"
+
+    st.divider()
+    st.subheader("💾 レポートの出力")
+    st.download_button(
         label="📄 解析結果をテキストファイルとしてダウンロード",
         data=report_content,
         file_name=f"Protocol_Analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
         mime="text/plain"
     )
 
-# 生テキストの確認用
+# 生テキストの確認
 if 'extracted_text' in st.session_state:
     with st.expander("📄 抽出されたプロトコルテキストを確認"):
         st.text_area("Protocol Raw Text", st.session_state['extracted_text'], height=200)
