@@ -75,7 +75,19 @@ def call_ai(prompt_text):
             return f"ローカルLLM接続エラー: {e}"
 
 # --- メイン画面 ---
-st.title("📋 Estimand-Protocol Mapping Tool")
+# タイトルの横に estimand.png を表示する設定を復元
+col1, col2 = st.columns([1, 10]) # カラム幅を調整
+
+# 画像ファイルの存在を確認して表示
+image_path = 'estimand.png'
+if os.path.exists(image_path):
+    with col1:
+        # 画像を表示。幅を調整できます。
+        image = Image.open(image_path)
+        st.image(image, width=100) # widthはお好みで調整してください
+
+with col2:
+    st.title("📋 Estimand-Protocol Mapping Tool")
 
 uploaded_file = st.file_uploader("プロトコル (PDF) をアップロード", type="pdf")
 
