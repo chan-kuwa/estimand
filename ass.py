@@ -229,7 +229,7 @@ ICH-GCPや一般的RBQM知識による補完は禁止。
     report_content += f"iii. 変数: \n{var}\n\n"
     report_content += f"iv. 中間事象の取扱い: \n{ice}\n\n"
     report_content += f"v. 集団レベルでの要約: \n{sum_val}\n"
-    report_content += "="*60 + "\n\n
+    report_content += "="*60 + "\n\n"
 
     
     report_content += "■1. プロトコル解析結果\n" + st.session_state['res'] + "\n\n"
