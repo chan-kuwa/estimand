@@ -13,10 +13,9 @@ if os.path.exists(icon_path):
 else:
     st.set_page_config(page_title="Estimand-Protocol Mapping Tool", layout="wide")
 
-# --- タイトルと説明文 ---
-st.title("Estimand-Protocol Mapping Tool")
 
-# ここに文言を追加します
+
+# 説明文
 st.markdown("""
 本ツールは、エスティマンドを成立させる試験運用条件を、プロトコルから抽出・整理します。
 サイドバーにエスティマンドを入力し、プロトコルPDFをアップロードして解析ボタンを実行してください。
