@@ -7,7 +7,6 @@ import requests
 import datetime
 
 # --- ページ設定 ---
-# ブラウザのタブアイコンも指定
 icon_path = "estimand.png"
 if os.path.exists(icon_path):
     st.set_page_config(page_title="Estimand-Protocol Mapping Tool", page_icon=icon_path, layout="wide")
@@ -88,7 +87,7 @@ if uploaded_file and st.button("🚀 解析を開始"):
     else:
         with st.spinner("AI解析中..."):
             doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-            text = "\n".join([f"--- [PAGE {i+1}] ---\n{p.get_text()}" for i, p in enumerate(doc)])
+            text_data = "\n".join([f"--- [PAGE {i+1}] ---\n{p.get_text()}" for i, p in enumerate(doc)])
             
             prompt = f"""
 あなたは臨床試験の専門家です。プロトコル全文を解析し、以下の指示に従って情報を抽出してください。
@@ -118,13 +117,20 @@ v. 集団レベルでの要約：{sum_val}
 - 「--- [PAGE X] ---」をページ数の根拠とすること。
 - 推測・補完を禁止し、不明な場合は「不明」と明記する。
 ---
-{text[:80000]}
+{text_data[:80000]}
 """
             st.session_state['res'] = call_ai(prompt)
+            # 新規解析時に古い深掘り結果をクリア
+            if 'ctq_res' in st.session_state:
+                del st.session_state['ctq_res']
 
+# --- 結果表示とダウンロード機能（統合版） ---
 if 'res' in st.session_state:
+    st.divider()
+    st.header("📝 プロトコル解析結果")
     st.markdown(st.session_state['res'])
     
+    # CTQ深掘りボタン
     if st.button("🔍 CTQ（信頼性リスク）を深掘りする"):
         with st.spinner("CTTIフレームワークと照合中..."):
             ctq_prompt = f"""
@@ -201,38 +207,22 @@ ICH-GCPや一般的RBQM知識による補完は禁止。
 ### 5. 関連プロトコル規定
 ### 5. CTTIのどの原則を参考にしたかの記述とその根拠
 """
-           # --- 結果表示とダウンロード機能（統合版） ---
-if 'res' in st.session_state:
-    # 1. 最初の解析結果を表示
-    st.divider()
-    st.header("📝 プロトコル解析結果")
-    st.markdown(st.session_state['res'])
-    
-    # 2. CTQ深掘りボタン
-    if st.button("🔍 CTQ（信頼性リスク）を深掘りする"):
-        with st.spinner("CTTIフレームワークと照合中..."):
-            # プロンプトの組み立て（ここはご提示の長いプロンプトが入る）
-            ctq_prompt = f"（中略：詳細なCTQ用プロンプト）\n{st.session_state['res']}"
             st.session_state['ctq_res'] = call_ai(ctq_prompt)
-            st.rerun() # ボタンを押した後に再描画して下の表示を更新する
+            st.rerun()
 
-    # 3. CTQの結果がある場合だけ、ここを表示する
+    # 3. CTQの結果表示
     if 'ctq_res' in st.session_state:
         st.divider()
         st.header("🤖 CTQ分析レポート (RBQM分析)")
         st.markdown(st.session_state['ctq_res'])
 
-  # 4. レポート組み立てとダウンロード（ボタンは常に一番下に配置）
-    # resがsession_stateにあることが確定しているこの位置で組み立てる
+    # 4. レポート組み立てとダウンロード
     now_dt = datetime.datetime.now()
-
-    # 1. 保存用のテキストを組み立てる
     report_content = "【Estimand-Protocol Mapping Report】\n"
-    report_content += f"生成日時: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+    report_content += f"生成日時: {now_dt.strftime('%Y-%m-%d %H:%M:%S')}\n"
     report_content += "="*60 + "\n\n"
     report_content += "■1. プロトコル解析結果\n" + st.session_state['res'] + "\n\n"
     
-    # ctq_resがある場合のみ中身を合体させる
     if 'ctq_res' in st.session_state:
         report_content += "="*60 + "\n"
         report_content += "■2. CTQ要因分析 (RBQM)\n" + st.session_state['ctq_res'] + "\n"
@@ -245,4 +235,3 @@ if 'res' in st.session_state:
         file_name=f"Protocol_Analysis_{now_dt.strftime('%Y%m%d_%H%M')}.txt",
         mime="text/plain"
     )
-    
