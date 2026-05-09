@@ -6,12 +6,26 @@ import pandas as pd
 import requests
 import datetime
 
-# --- ページ設定 ---
+# --- ページ設定 (必ず最初に実行) ---
 icon_path = "estimand.png"
 if os.path.exists(icon_path):
     st.set_page_config(page_title="Estimand-Protocol Mapping Tool", page_icon=icon_path, layout="wide")
 else:
     st.set_page_config(page_title="Estimand-Protocol Mapping Tool", layout="wide")
+
+# --- タイトルと説明文 ---
+st.title("Estimand-Protocol Mapping Tool")
+
+# ここに文言を追加します
+st.markdown("""
+本ツールは、エスティマンドを成立させる試験運用条件をプロトコルから抽出し、
+それらを「試験解釈を維持するCTQ状態」として構造化します。
+
+CTQは個別データや手順ではなく、
+エスティマンド解釈を成立させる運用状態として扱われます。
+""")
+
+st.divider()
 
 # --- CTTIデータの読み込み ---
 ctti_summary_text = ""
