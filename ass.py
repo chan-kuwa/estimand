@@ -206,6 +206,15 @@ ICH-GCPや一般的RBQM知識による補完は禁止。
         st.divider()
         st.header("🤖 CTQ分析レポート (RBQM分析)")
         st.markdown(st.session_state['ctq_res'])
+
+st.download_button(
+        label="📄 解析結果をテキストファイルとしてダウンロード",
+        data=report_content,
+        file_name=f"Protocol_Analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+        mime="text/plain"
+    )
+
+# 生テキストの確認用
 if 'extracted_text' in st.session_state:
     with st.expander("📄 抽出されたプロトコルテキストを確認"):
         st.text_area("Protocol Raw Text", st.session_state['extracted_text'], height=200)
