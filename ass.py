@@ -206,3 +206,6 @@ ICH-GCPや一般的RBQM知識による補完は禁止。
         st.divider()
         st.header("🤖 CTQ分析レポート (RBQM分析)")
         st.markdown(st.session_state['ctq_res'])
+if 'extracted_text' in st.session_state:
+    with st.expander("📄 抽出されたプロトコルテキストを確認"):
+        st.text_area("Protocol Raw Text", st.session_state['extracted_text'], height=200)
