@@ -3,12 +3,17 @@ import google.generativeai as genai
 import fitz  # PyMuPDF
 import os
 import pandas as pd
-import requests  # ローカルLLM通信用
+import requests
 
 # --- ページ設定 ---
-st.set_page_config(page_title="Estimand-Protocol Mapping Tool", layout="wide")
+# ブラウザのタブアイコンも指定
+icon_path = "estimand.png"
+if os.path.exists(icon_path):
+    st.set_page_config(page_title="Estimand-Protocol Mapping Tool", page_icon=icon_path, layout="wide")
+else:
+    st.set_page_config(page_title="Estimand-Protocol Mapping Tool", layout="wide")
 
-# --- CTTIデータの読み込み（Excel直接読み込み） ---
+# --- CTTIデータの読み込み ---
 ctti_summary_text = ""
 excel_file = '000111598.xlsx'
 
@@ -25,8 +30,6 @@ if os.path.exists(excel_file):
 # --- サイドバー：AI設定 ---
 with st.sidebar:
     st.header("🤖 AI 設定")
-    
-    # 接続モードの選択
     ai_mode = st.radio("接続モード:", ["Gemini API", "Local LLM (LM Studio等)"])
     
     api_key = None
@@ -35,60 +38,47 @@ with st.sidebar:
         if auth_method == "シークレット(Secrets)を使用":
             try:
                 api_key = st.secrets.get("GOOGLE_API_KEY")
-                if not api_key: st.error("Secrets内に 'GOOGLE_API_KEY' が見つかりません。")
-            except Exception: st.error("secrets.toml ファイルが見つかりません。")
+            except: pass
         else:
-            api_key = st.text_input("Gemini API Key を入力してください", type="password")
+            api_key = st.text_input("Gemini API Key を入力", type="password")
 
         if api_key:
             genai.configure(api_key=api_key)
             st.success("Gemini API 設定完了")
     else:
         local_url = st.text_input("Local API Endpoint", value="http://localhost:1234/v1/chat/completions")
-        st.info("ローカルLLMサーバーを起動してください。")
 
     st.divider()
-    st.header("📝 エスティマンド定義（初期値）")
+    st.header("📝 エスティマンド定義")
     tre = st.text_area("i. 関心のある治療", "ペムブロリズマブ（200 mg 3週毎静注）＋治験薬X（20 mg 1日1回経口）の併用療法\n（治験実施計画書より：「ペムブロリズマブを Day1 に200 mg、治験薬Xを20mg 1日1回投与」）", height=100)
     pop = st.text_area("ii. 対象集団", "FAS：\n適格基準を満たし、除外基準に該当せず、治験薬が1回以上投与された MSI-High 進行・再発固形がん患者\n（「FAS…治験薬が1回以上投与された集団」）", height=100)
     var = st.text_area("iii. 変数", "中央判定による 確定された客観意図奏効割合（ORR）\n（「Primary endpoint：中央判定による確定された客観的奏効割合」）", height=100)
-    ice = st.text_area("iv. 中間事象の取扱い", "ORR に関する中間事象は以下の方方針で扱う：\n\n・治療中止：評価不能は非奏効（treatment policy）\n・後治療開始：後治療を考慮せず最良効果判定（treatment policy）\n・死亡：非奏効\n・画像評価不能：非奏効", height=150)
+    ice = st.text_area("iv. 中間事象の取扱い", "ORR に関する中間事象は以下の方針で扱う：\n\n・治療中止：評価不能は非奏効（treatment policy）\n・後治療開始：後治療を考慮せず最良効果判定（treatment policy）\n・死亡：非奏効\n・画像評価不能：非奏効", height=150)
     sum_val = st.text_area("v. 集団レベルでの要約", "FAS における ORR の 点推定値と二項分布に基づく95%信頼区間\n（「二項分布に基づく95%信頼区間を算出」）", height=80)
 
-# --- AI実行関数（ロジックを分離せず埋め込み） ---
+# --- AI実行関数 ---
 def call_ai(prompt_text):
     if ai_mode == "Gemini API":
-        # モデル名は gemini-3-flash-preview を厳守
-        model = genai.GenerativeModel('gemini-3-flash-preview')
-        response = model.generate_content(prompt_text)
-        return response.text
+        model = genai.GenerativeModel('gemini-3-flash-preview') # 固定
+        return model.generate_content(prompt_text).text
     else:
-        # ローカルLLMへのリクエスト
-        payload = {
-            "messages": [{"role": "user", "content": prompt_text}],
-            "temperature": 0.1
-        }
         try:
-            res = requests.post(local_url, json=payload)
+            res = requests.post(local_url, json={"messages": [{"role": "user", "content": prompt_text}], "temperature": 0.1})
             return res.json()['choices'][0]['message']['content']
         except Exception as e:
-            return f"ローカルLLM接続エラー: {e}"
+            return f"接続エラー: {e}"
 
-# --- メイン画面 ---
-# タイトルの横に estimand.png を表示する設定を復元
-col1, col2 = st.columns([1, 10]) # カラム幅を調整
-
-# 画像ファイルの存在を確認して表示
-image_path = 'estimand.png'
-if os.path.exists(image_path):
-    with col1:
-        # 画像を表示。幅を調整できます。
-        image = Image.open(image_path)
-        st.image(image, width=100) # widthはお好みで調整してください
-
-with col2:
+# --- メインタイトル（画像とテキストを横並び） ---
+if os.path.exists(icon_path):
+    col_img, col_tit = st.columns([1, 20])
+    with col_img:
+        st.image(icon_path, width=45)
+    with col_tit:
+        st.title("Estimand-Protocol Mapping Tool")
+else:
     st.title("📋 Estimand-Protocol Mapping Tool")
 
+# --- 解析実行セクション ---
 uploaded_file = st.file_uploader("プロトコル (PDF) をアップロード", type="pdf")
 
 if uploaded_file and st.button("🚀 解析を開始"):
@@ -147,31 +137,11 @@ CTTIの考え方を参考にしながら、
 【重要】
 ここでいうCTQ要因とは、
 個別データ項目、個別手順、個別逸脱ではなく、
-
-「その状態が崩れると、
-エスティマンドの解釈信頼性が低下する
-試験運用上の成立状態」
-
-を指します。
-
-例：
-- 盲検性が維持されていること
-- endpoint評価の一貫性が維持されていること
-- 適切な介入実施が維持されていること
-- 適切な追跡が維持されていること
-
-【禁止事項】
-- データ項目そのものをCTQとしない
-- AE名や逸脱名をCTQとしない
-- 単なる重要項目列挙をしない
-- 推測や一般論を記載しない
+「その状態が崩れると、エスティマンドの解釈信頼性が低下する試験運用上の成立状態」を指します。
 
 【実施内容】
-各エスティマンド要素およびAE対応規定について：
-
 1. 成立条件群を整理
-2. それら条件群が支えている
-    「試験解釈上の成立状態」を抽象化
+2. それら条件群が支えている「試験解釈上の成立状態」を抽象化
 3. その成立状態をCTQ要因として記述
 4. そのCTQ要因が崩れる代表的リスク例を簡潔に記述
 5. 関連するプロトコル規定・観測データを対応づける
@@ -183,24 +153,12 @@ CTTIの考え方を参考にしながら、
 {st.session_state['res']}
 
 【出力形式】
-
 ## CTQ要因名
-
 ### 1. このCTQ要因が支える試験解釈
-（何の解釈信頼性を支えているか）
-
 ### 2. 関連する成立条件
-- ...
-
 ### 3. 関連する観測データ
-- ...
-
 ### 4. 想定される代表的リスク
-- ...
-
 ### 5. 関連プロトコル規定
-- 章番号
-- ページ番号
 """
             st.session_state['ctq_res'] = call_ai(ctq_prompt)
 
