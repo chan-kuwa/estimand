@@ -131,6 +131,9 @@ def record_heading(record, index):
         record.get("規定の要約")
         or record.get("確認したい状態")
         or record.get("事象")
+        or record.get("CTQ要因候補")
+        or record.get("リスク事象")
+        or record.get("確認事項")
         or ""
     )
     summary = str(summary).strip()
@@ -561,7 +564,9 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
 
 with ctq_tab:
     st.header("CTQ・リスク候補とレポート")
-    st.write("観測情報までの結果を基に、必要な場合だけCTQ・リスク候補を整理します。")
+    st.write(
+        "CTQ候補、リスク候補、仕様不足・不整合を区別します。試験運営を独立したCTQ区分としては扱いません。"
+    )
 
     if "observation_result" not in st.session_state:
         st.info("先に「3. 観測情報」を実行してください。")
@@ -573,10 +578,60 @@ with ctq_tab:
 
 【制約】
 - CTQ要因を単一データ名、単一手順、個別逸脱名として表現しない。
-- Estimandの解釈、安全性・被験者保護、試験運営を別区分にする。
+- CTQの主目的区分は「Estimand解釈」と「安全性・被験者保護」の2区分だけとする。
+- 「試験運営」という独立したCTQ区分を作らない。
+- 登録、適格性確認、投与記録、画像転送、SAE報告等の運営プロセスは、
+  それが支えるCTQ候補の「関連する実施プロセス」として記述する。
 - 一般論で補完せず、提示された規定と観測情報から導ける候補に限定する。
 - モニタリング手法、担当者、頻度、閾値、リスク低減策は決定しない。
-- 候補ごとに根拠と、専門家が確認すべき不確実性を示す。
+- 文書に手順があるという理由だけでCTQにしない。試験目的の解釈または被験者保護への重要性を根拠で示す。
+- SAE報告等は試験運営ではなく、主目的が被験者保護であれば「安全性・被験者保護」に分類する。
+- 治療条件、対象集団、変数に関係する実施プロセスは「Estimand解釈」に分類し、対応要素を保持する。
+- Strategy未記載、文書間不一致、確認方法未特定等は、原則としてCTQではなく
+  「仕様不足・不整合・要確認事項」に分ける。
+- 規定から直接導けるCTQ候補と、将来起こり得るリスク事象を混同しない。
+- 候補ごとに根拠規定IDと、専門家が確認すべき不確実性を示す。
+
+【出力形式】
+Markdownを付けず、以下のキーを持つ正しいJSONオブジェクトだけを出力する。
+{{
+  "ctq_candidates": [
+    {{
+      "ID": "C-01",
+      "主目的区分": "Estimand解釈",
+      "関連Estimand要素": ["変数"],
+      "CTQ要因候補": "",
+      "重要な状態": "",
+      "関連する実施プロセス": "",
+      "根拠規定ID": ["E-01"],
+      "根拠": "",
+      "専門家が確認すべき不確実性": ""
+    }}
+  ],
+  "risk_candidates": [
+    {{
+      "ID": "R-01",
+      "関連CTQ": "C-01",
+      "リスク事象": "",
+      "根拠規定ID": [],
+      "根拠": "",
+      "推論区分": "規定・観測情報から論理的に導出",
+      "専門家確認事項": ""
+    }}
+  ],
+  "specification_issues": [
+    {{
+      "ID": "G-01",
+      "区分": "仕様不足",
+      "対象": "ICE Strategy",
+      "確認事項": "",
+      "根拠規定ID": [],
+      "根拠": "",
+      "CTQ候補としない理由": ""
+    }}
+  ],
+  "notes": []
+}}
 
 【CTTI参照情報】
 {reference_section}
@@ -589,12 +644,44 @@ with ctq_tab:
 """
         try:
             with st.spinner("CTQ・リスク候補を整理しています..."):
-                st.session_state.ctq_result = call_ai(prompt, ai_mode, api_key, local_url)
+                raw_result = call_ai(prompt, ai_mode, api_key, local_url)
+                try:
+                    st.session_state.ctq_result = parse_json_response(raw_result)
+                    st.session_state.pop("ctq_raw", None)
+                except Exception:
+                    st.session_state.ctq_raw = raw_result
+                    st.session_state.ctq_result = raw_result
+                    st.warning("表形式への変換に失敗したため、AIの原文を表示します。")
         except Exception as error:
             st.error(f"解析に失敗しました: {error}")
 
     if "ctq_result" in st.session_state:
-        st.markdown(st.session_state.ctq_result)
+        result = st.session_state.ctq_result
+        if isinstance(result, dict):
+            st.subheader("CTQ要因候補")
+            st.caption("主目的はEstimand解釈または安全性・被験者保護です。")
+            show_table(
+                result.get("ctq_candidates", []),
+                "提示された情報からCTQ候補は導出されませんでした。",
+            )
+
+            st.subheader("リスク候補")
+            st.caption("CTQ候補と区別し、起こり得る事象として表示します。")
+            show_table(
+                result.get("risk_candidates", []),
+                "提示された情報からリスク候補は導出されませんでした。",
+            )
+
+            st.subheader("仕様不足・不整合・要確認事項")
+            st.caption("ICE Strategy未記載などをCTQへ自動的に格上げせず、別に表示します。")
+            show_table(
+                result.get("specification_issues", []),
+                "仕様不足・不整合・要確認事項は抽出されませんでした。",
+            )
+            if result.get("notes"):
+                st.write("補足:", result["notes"])
+        else:
+            st.markdown(result)
 
     available_results = any(
         key in st.session_state
