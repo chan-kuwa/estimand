@@ -1,5 +1,7 @@
 import datetime
+import json
 import os
+import re
 
 import fitz
 import google.generativeai as genai
@@ -89,6 +91,33 @@ def call_ai(prompt, mode, api_key, local_url):
     return response.json()["choices"][0]["message"]["content"]
 
 
+def parse_json_response(text):
+    """Parse JSON even when the model wraps it in a Markdown code fence."""
+    cleaned = re.sub(r"^\s*```(?:json)?\s*", "", text.strip(), flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```\s*$", "", cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start >= 0 and end > start:
+            return json.loads(cleaned[start : end + 1])
+        raise
+
+
+def result_as_text(result):
+    if isinstance(result, dict):
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    return str(result)
+
+
+def show_table(records, empty_message):
+    if records:
+        st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
+    else:
+        st.info(empty_message)
+
+
 def estimand_context(treatment, population, variable, summary, ice_rows):
     summary_text = summary.strip() if summary.strip() else "未入力（任意項目）"
     return f"""
@@ -111,15 +140,13 @@ def estimand_context(treatment, population, variable, summary, ice_rows):
 
 if "ice_table" not in st.session_state:
     st.session_state.ice_table = pd.DataFrame(
-        [
-            {
-                "中間事象": "治療中止",
-                "定義・発生条件": "",
-                "関連する評価項目": "主要評価項目",
-                "Strategy": "Treatment policy",
-                "根拠・説明": "",
-                "出典": "ユーザー入力",
-            }
+        columns=[
+            "中間事象",
+            "定義・発生条件",
+            "関連する評価項目",
+            "Strategy",
+            "根拠・説明",
+            "出典",
         ]
     )
 
@@ -198,8 +225,6 @@ with input_tab:
                 help="主要なマッピング軸には使用せず、SAPとの整合性確認などの参考情報として扱います。",
             )
 
-    st.subheader("中間事象（ICE）とStrategy")
-    st.caption("行は自由に追加・削除できます。同じICEでも評価項目やStrategyが異なる場合は別の行として登録してください。")
     strategy_options = [
         "Treatment policy",
         "Hypothetical",
@@ -210,22 +235,29 @@ with input_tab:
         "その他・複合的な取扱い",
     ]
     source_options = ["Protocol", "SAP", "ProtocolとSAP", "ユーザー入力", "未確認"]
-    edited_ice = st.data_editor(
-        st.session_state.ice_table,
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Strategy": st.column_config.SelectboxColumn("Strategy", options=strategy_options, required=True),
-            "出典": st.column_config.SelectboxColumn("出典", options=source_options, required=True),
-        },
-        key="ice_editor",
-    )
+    with st.expander("中間事象（ICE）とStrategyの詳細設定（任意）"):
+        st.caption(
+            "未入力のまま解析できます。文書から抽出されたICE候補を確認した後、必要に応じて追加してください。"
+        )
+        edited_ice = st.data_editor(
+            st.session_state.ice_table,
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Strategy": st.column_config.SelectboxColumn(
+                    "Strategy", options=strategy_options, required=True
+                ),
+                "出典": st.column_config.SelectboxColumn(
+                    "出典", options=source_options, required=True
+                ),
+            },
+            key="ice_editor",
+        )
+        st.info(
+            "ICE、Strategy、Strategy適用の前提情報、試験実施上の規定は区別して解析します。"
+        )
     st.session_state.ice_table = edited_ice
-
-    st.info(
-        "ICEの発生情報、Strategy適用の前提情報、解析に必要な情報、関連する実施規定を区別して解析します。"
-    )
 
     st.subheader("対象文書")
     protocol_file = st.file_uploader("Protocol PDF（必須）", type="pdf", key="protocol_file")
@@ -254,7 +286,9 @@ with input_tab:
 
 with regulation_tab:
     st.header("関連規定の抽出")
-    st.write("この段階では原文に忠実な抽出を優先し、Strategyと試験実施上の規定を分けて表示します。")
+    st.write(
+        "規定を「Estimand関連」と「安全性・被験者保護」に分け、原文に忠実な候補を表で表示します。"
+    )
 
     if "protocol_text" not in st.session_state:
         st.info("先に「1. 入力」で文書を読み込んでください。")
@@ -269,7 +303,8 @@ with regulation_tab:
 以下のEstimand情報を手がかりに、Protocolおよび任意のSAPから関連記述を抽出してください。
 
 【目的】
-Estimandに対応する推定結果を意図した意味で解釈するために関連し得る規定を、専門家レビュー用の候補として整理する。
+1. Estimandに対応する推定結果の解釈に関連し得る規定を抽出する。
+2. 安全性・被験者保護のために重要となり得る規定を、上記とは別に抽出する。
 
 【重要な制約】
 - 文書にない規定を一般的なGCP知識や経験から補完しない。
@@ -278,23 +313,70 @@ Estimandに対応する推定結果を意図した意味で解釈するために
 - ProtocolとSAPの出典を混ぜない。
 - 各記述に文書名、章・項番号、ページ番号、短い原文引用を付す。
 - 不明な場合は「不明」、記載がない場合は「該当記載なし」とする。
+- Estimand関連規定には、「治療条件」「対象集団」「変数」のうち少なくとも1つを必ず対応づける。
+- 複数要素に関係する場合は配列に複数記載する。
+- 安全性規定はEstimandに無理に関連づけず、関連がある場合だけ対応要素を記載する。
 
 【Estimand情報】
 {st.session_state.estimand_input}
 
-【出力1：Estimand要素別の関連規定】
-対象集団、個人レベルの変数、治療条件、ICEごとに整理する。
+【Estimand要素の分類定義】
+- 治療条件：投与、変更、休薬、中断、中止、併用条件など、実際に受ける治療に関する規定。
+- 対象集団：適格性、除外条件、診断、解析対象集団への所属・採否に関する規定。
+- 変数：患者ごとの結果を意図した定義、方法、時点、判定手順で取得・導出するための規定。
 
-【出力2：ICEごとの分離整理】
-各ICEについて以下を分ける。
-1. ICEの定義・発生を特定する記述
-2. Strategyに関する記述
-3. Strategy適用の前提となる情報に関する記述
-4. 試験実施上の規定
-5. 解析に関する記述
+【安全性規定の抽出範囲】
+治療開始・継続基準、休薬・減量・再開・中止基準、AE/SAEの定義・評価期間・報告、
+安全性検査、妊娠・過量投与等の特別な状況、安全性追跡を対象とする。
 
-【出力3：ProtocolとSAPの対応】
-「Protocolのみ」「SAPのみ」「両方に記載」「記述不一致」「判定不能」のいずれかを示す。
+【ICE候補】
+文書に明記されたICE、ICEとなる可能性がある事象、単なる欠測・評価不能、
+評価項目を構成するイベントを区別する。Strategyが明記されていなければ推測せず「未記載」とする。
+
+【出力形式】
+Markdownを付けず、以下のキーを持つ正しいJSONオブジェクトだけを出力する。
+{{
+  "estimand_regulations": [
+    {{
+      "ID": "E-01",
+      "Estimand要素": ["治療条件"],
+      "関連ICE": "",
+      "規定の要約": "",
+      "規定種別": "",
+      "文書": "Protocol",
+      "章・項": "",
+      "ページ": "",
+      "原文引用": ""
+    }}
+  ],
+  "safety_regulations": [
+    {{
+      "ID": "S-01",
+      "安全性領域": "",
+      "Estimand要素との関連": [],
+      "関連ICE": "",
+      "規定の要約": "",
+      "対象": "",
+      "文書": "Protocol",
+      "章・項": "",
+      "ページ": "",
+      "原文引用": ""
+    }}
+  ],
+  "ice_candidates": [
+    {{
+      "事象": "",
+      "区分": "ICE候補",
+      "主に関係するEstimand要素": [],
+      "文書上のStrategy": "未記載",
+      "根拠": "",
+      "文書": "Protocol",
+      "章・項": "",
+      "ページ": ""
+    }}
+  ],
+  "notes": []
+}}
 
 【Protocol】
 {st.session_state.protocol_text[:80000]}
@@ -304,12 +386,35 @@ Estimandに対応する推定結果を意図した意味で解釈するために
 """
         try:
             with st.spinner("関連規定を抽出しています..."):
-                st.session_state.regulation_result = call_ai(prompt, ai_mode, api_key, local_url)
+                raw_result = call_ai(prompt, ai_mode, api_key, local_url)
+                try:
+                    st.session_state.regulation_result = parse_json_response(raw_result)
+                    st.session_state.pop("regulation_raw", None)
+                except Exception:
+                    st.session_state.regulation_raw = raw_result
+                    st.session_state.regulation_result = raw_result
+                    st.warning("表形式への変換に失敗したため、AIの原文を表示します。")
         except Exception as error:
             st.error(f"解析に失敗しました: {error}")
 
     if "regulation_result" in st.session_state:
-        st.markdown(st.session_state.regulation_result)
+        result = st.session_state.regulation_result
+        if isinstance(result, dict):
+            st.subheader("Estimand関連規定")
+            st.caption("各規定を治療条件・対象集団・変数の少なくとも1つに対応づけています。")
+            show_table(result.get("estimand_regulations", []), "関連規定は抽出されませんでした。")
+
+            st.subheader("安全性・被験者保護規定")
+            st.caption("Estimandとの関連は、実際に関係する場合だけ表示します。")
+            show_table(result.get("safety_regulations", []), "安全性規定は抽出されませんでした。")
+
+            st.subheader("中間事象（ICE）候補")
+            st.caption("Strategyは文書に明記されている場合だけ表示し、欠測等とは区別します。")
+            show_table(result.get("ice_candidates", []), "ICE候補は抽出されませんでした。")
+            if result.get("notes"):
+                st.write("補足:", result["notes"])
+        else:
+            st.markdown(result)
 
 with observation_tab:
     st.header("観測・確認すべき情報の特定")
@@ -325,8 +430,8 @@ with observation_tab:
 以下の関連規定の抽出結果だけを根拠として、観測・確認すべき情報の候補を整理してください。
 
 【目的】
-Estimandに対応する推定結果を意図した意味で解釈するために重要となり得る規定について、
-その規定に対応する試験運用上の状態と、状態を確認するための情報候補を明らかにする。
+1. Estimand関連規定について、対応する試験運用上の状態と観測情報候補を明らかにする。
+2. 安全性・被験者保護規定について、必要な状態と観測情報候補を別に整理する。
 
 【重要な制約】
 - 中央モニタリング、サイトモニタリング、SDV、SDRなどの確認手法を決定しない。
@@ -335,6 +440,8 @@ Estimandに対応する推定結果を意図した意味で解釈するために
 - 文書に直接記載された内容と、規定から論理的に導いた候補を区別する。
 - 一般的なGCP要求事項を根拠なく追加しない。
 - 観測方法を特定できない場合も候補から除外せず、「要専門家検討」とする。
+- 元の規定IDを必ず保持する。
+- Estimand側では元の「治療条件」「対象集団」「変数」の対応を必ず保持する。
 
 【ICEについて必ず分ける項目】
 1. ICEの発生を特定する情報
@@ -342,34 +449,76 @@ Estimandに対応する推定結果を意図した意味で解釈するために
 3. Strategyに対応した解析に必要な情報
 4. それらの情報を得るために関係する実施規定
 
-【出力形式：重要規定ごと】
-## 重要規定候補
-- 関連するEstimand要素／ICE
-- 出典と原文根拠
-- 推定結果の解釈との関係（候補）
-- 確認したい試験運用上の状態
-- 観測・確認すべき情報
-- 想定される情報源
-- 観測単位（症例／来院／検査／施設／試験全体など）
-- 観測時点
-- 現時点での観測可能性（可能／一部可能／不明）
-- 導出区分（原文に直接記載／規定から論理的に導出／要専門家確認）
-- 残る不確実性
+【出力形式】
+Markdownを付けず、以下のキーを持つ正しいJSONオブジェクトだけを出力する。
+{{
+  "estimand_observations": [
+    {{
+      "規定ID": "E-01",
+      "Estimand要素": ["変数"],
+      "関連ICE": "",
+      "確認したい状態": "",
+      "観測・確認すべき情報": "",
+      "想定情報源": "",
+      "観測単位": "",
+      "観測時点": "",
+      "導出区分": "規定から論理的に導出",
+      "残る不確実性": ""
+    }}
+  ],
+  "safety_observations": [
+    {{
+      "規定ID": "S-01",
+      "安全性領域": "",
+      "Estimand要素との関連": [],
+      "確認したい状態": "",
+      "観測・確認すべき情報": "",
+      "想定情報源": "",
+      "観測単位": "",
+      "観測時点": "",
+      "導出区分": "規定から論理的に導出",
+      "残る不確実性": ""
+    }}
+  ],
+  "notes": []
+}}
 
 【Estimand情報】
 {st.session_state.estimand_input}
 
 【関連規定の抽出結果】
-{st.session_state.regulation_result}
+{result_as_text(st.session_state.regulation_result)}
 """
         try:
             with st.spinner("観測情報を整理しています..."):
-                st.session_state.observation_result = call_ai(prompt, ai_mode, api_key, local_url)
+                raw_result = call_ai(prompt, ai_mode, api_key, local_url)
+                try:
+                    st.session_state.observation_result = parse_json_response(raw_result)
+                    st.session_state.pop("observation_raw", None)
+                except Exception:
+                    st.session_state.observation_raw = raw_result
+                    st.session_state.observation_result = raw_result
+                    st.warning("表形式への変換に失敗したため、AIの原文を表示します。")
         except Exception as error:
             st.error(f"解析に失敗しました: {error}")
 
     if "observation_result" in st.session_state:
-        st.markdown(st.session_state.observation_result)
+        result = st.session_state.observation_result
+        if isinstance(result, dict):
+            st.subheader("Estimand解釈に関する観測情報")
+            show_table(
+                result.get("estimand_observations", []),
+                "Estimand関連の観測情報は抽出されませんでした。",
+            )
+            st.subheader("安全性・被験者保護に関する観測情報")
+            show_table(
+                result.get("safety_observations", []),
+                "安全性関連の観測情報は抽出されませんでした。",
+            )
+            if result.get("notes"):
+                st.write("補足:", result["notes"])
+        else:
+            st.markdown(result)
 
 with ctq_tab:
     st.header("CTQ・リスク候補とレポート")
@@ -394,10 +543,10 @@ with ctq_tab:
 {reference_section}
 
 【関連規定】
-{st.session_state.regulation_result}
+{result_as_text(st.session_state.regulation_result)}
 
 【観測・確認すべき情報】
-{st.session_state.observation_result}
+{result_as_text(st.session_state.observation_result)}
 """
         try:
             with st.spinner("CTQ・リスク候補を整理しています..."):
@@ -422,9 +571,17 @@ with ctq_tab:
             st.session_state.get("estimand_input", ""),
         ]
         if "regulation_result" in st.session_state:
-            report_parts.extend(["=" * 60, "■ 関連規定", st.session_state.regulation_result])
+            report_parts.extend(
+                ["=" * 60, "■ 関連規定", result_as_text(st.session_state.regulation_result)]
+            )
         if "observation_result" in st.session_state:
-            report_parts.extend(["=" * 60, "■ 観測・確認すべき情報", st.session_state.observation_result])
+            report_parts.extend(
+                [
+                    "=" * 60,
+                    "■ 観測・確認すべき情報",
+                    result_as_text(st.session_state.observation_result),
+                ]
+            )
         if "ctq_result" in st.session_state:
             report_parts.extend(["=" * 60, "■ CTQ・リスク候補", st.session_state.ctq_result])
 
