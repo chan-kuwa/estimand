@@ -460,7 +460,7 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
 with observation_tab:
     st.header("観測・確認すべき情報の特定")
     st.write(
-        "関連規定から、何を観測・確認すべきかの候補を整理します。確認手法やモニタリング計画は決定しません。"
+        "関連規定から、維持されるべき状態と、何を観測・確認すべきかの候補を整理します。"
     )
 
     if "regulation_result" not in st.session_state:
@@ -564,7 +564,7 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
 with ctq_tab:
     st.header("CTQ・リスク候補とレポート")
     st.write(
-        "CTQ候補、リスク候補、仕様不足・不整合を区別します。試験運営を独立したCTQ区分としては扱いません。"
+        "CTQ候補、リスク候補を特定します。ここまで得られた結果とCTTIを参考に推論します。。"
     )
 
     if "observation_result" not in st.session_state:
