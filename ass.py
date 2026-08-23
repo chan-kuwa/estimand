@@ -111,11 +111,50 @@ def result_as_text(result):
     return str(result)
 
 
+def format_display_value(value):
+    if value is None or value == "":
+        return "―"
+    if isinstance(value, list):
+        return " / ".join(str(item) for item in value) if value else "―"
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def record_heading(record, index):
+    record_id = (
+        record.get("ID")
+        or record.get("規定ID")
+        or f"項目 {index + 1}"
+    )
+    summary = (
+        record.get("規定の要約")
+        or record.get("確認したい状態")
+        or record.get("事象")
+        or ""
+    )
+    summary = str(summary).strip()
+    if len(summary) > 70:
+        summary = summary[:70] + "…"
+    return f"{record_id}｜{summary}" if summary else str(record_id)
+
+
 def show_table(records, empty_message):
-    if records:
-        st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
-    else:
+    """Show one vertical table per regulation/observation item."""
+    if not records:
         st.info(empty_message)
+        return
+
+    for index, record in enumerate(records):
+        with st.expander(
+            record_heading(record, index),
+            expanded=(index == 0),
+        ):
+            rows = [
+                {"項目": key, "内容": format_display_value(value)}
+                for key, value in record.items()
+            ]
+            st.table(pd.DataFrame(rows))
 
 
 def estimand_context(treatment, population, variable, summary, ice_rows):
