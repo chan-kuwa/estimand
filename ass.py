@@ -708,7 +708,13 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
                 ]
             )
         if "ctq_result" in st.session_state:
-            report_parts.extend(["=" * 60, "■ CTQ・リスク候補", st.session_state.ctq_result])
+            report_parts.extend(
+                [
+                    "=" * 60,
+                    "■ CTQ・リスク候補",
+                    result_as_text(st.session_state.ctq_result),
+                ]
+            )
 
         st.download_button(
             "解析結果をテキストでダウンロード",
