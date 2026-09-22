@@ -14,6 +14,49 @@ ICON_PATH = "estimand.png"
 CTTI_PATH = "000111598.xlsx"
 MODEL_NAME = "gemini-3-flash-preview"
 LOCAL_ENDPOINT = "http://localhost:1234/v1/chat/completions"
+DEMO_PROTOCOL_PATH = "demo_protocol_ra_das28.pdf"
+
+DEMO_TREATMENT = (
+    "安定用量MTXに加え、薬剤A 100 mgを週1回24週間皮下投与する治療と、"
+    "対応プラセボを同様に投与する治療の比較"
+)
+DEMO_POPULATION = "選択・除外基準を満たし、無作為化された成人活動性関節リウマチ患者"
+DEMO_VARIABLE = "24週時点のDAS28-CRP寛解（DAS28-CRP＜2.6）の有無"
+DEMO_SUMMARY = "各群の寛解割合の差（薬剤A群－プラセボ群）および95%信頼区間"
+DEMO_ICE_ROWS = [
+    {
+        "中間事象": "研究薬の永久中止",
+        "定義・発生条件": "24週以前に研究薬を永久中止すること",
+        "関連する評価項目": "24週時点のDAS28-CRP寛解",
+        "Strategy": "Treatment policy",
+        "根拠・説明": "中止理由を問わず、24週のDAS28-CRP寛解を評価する。",
+        "出典": "Protocol",
+    },
+    {
+        "中間事象": "研究薬の一時休薬または投与遅延",
+        "定義・発生条件": "研究薬の一時休薬または予定投与の遅延",
+        "関連する評価項目": "24週時点のDAS28-CRP寛解",
+        "Strategy": "Treatment policy",
+        "根拠・説明": "休薬・遅延を含む実際の治療経過下で24週を評価する。",
+        "出典": "Protocol",
+    },
+    {
+        "中間事象": "規定救済治療の開始または増量",
+        "定義・発生条件": "12週以降に規定された救済治療を開始または増量すること",
+        "関連する評価項目": "24週時点のDAS28-CRP寛解",
+        "Strategy": "Hypothetical",
+        "根拠・説明": "救済治療がなかった場合の24週寛解を推定対象とする。",
+        "出典": "Protocol",
+    },
+    {
+        "中間事象": "24週以前の死亡",
+        "定義・発生条件": "無作為化後24週評価以前の死亡",
+        "関連する評価項目": "24週時点のDAS28-CRP寛解",
+        "Strategy": "Composite variable",
+        "根拠・説明": "原因を問わず24週寛解なしとして扱う。",
+        "出典": "Protocol",
+    },
+]
 
 st.set_page_config(
     page_title="Estimand-Protocol Mapping Tool",
@@ -30,6 +73,17 @@ def extract_pdf(uploaded_file):
         f"--- [PAGE {index + 1}] ---\n{page.get_text()}"
         for index, page in enumerate(document)
     )
+
+
+def extract_pdf_path(path):
+    document = fitz.open(path)
+    try:
+        return "\n".join(
+            f"--- [PAGE {index + 1}] ---\n{page.get_text()}"
+            for index, page in enumerate(document)
+        )
+    finally:
+        document.close()
 
 
 def format_ice_rows(dataframe):
@@ -180,6 +234,16 @@ def estimand_context(treatment, population, variable, summary, ice_rows):
 """
 
 
+for field_key in [
+    "treatment_input",
+    "population_input",
+    "variable_input",
+    "population_summary_input",
+]:
+    if field_key not in st.session_state:
+        st.session_state[field_key] = ""
+
+
 if "ice_table" not in st.session_state:
     st.session_state.ice_table = pd.DataFrame(
         columns=[
@@ -195,20 +259,34 @@ if "ice_table" not in st.session_state:
 
 with st.sidebar:
     st.header("AI接続設定")
-    ai_mode = st.radio("接続モード", ["Gemini API", "Local LLM"])
+    connection_mode = st.radio(
+        "接続方法",
+        ["Gemini API（Secrets）", "Gemini API（キーを入力）", "Local LLM"],
+    )
     api_key = ""
     local_url = LOCAL_ENDPOINT
-    if ai_mode == "Gemini API":
+    if connection_mode == "Gemini API（Secrets）":
         try:
-            secret_key = st.secrets.get("GOOGLE_API_KEY", "")
+            api_key = st.secrets.get("GOOGLE_API_KEY", "")
         except Exception:
-            secret_key = ""
-        use_secret = st.checkbox("Streamlit Secretsを使用", value=bool(secret_key))
-        api_key = secret_key if use_secret else st.text_input("Gemini API Key", type="password")
+            api_key = ""
         if api_key:
-            st.success("APIキーを読み込みました")
+            st.success("Streamlit SecretsのAPIキーを読み込みました")
+        else:
+            st.warning("Streamlit SecretsにGOOGLE_API_KEYが設定されていません。")
+        ai_mode = "Gemini API"
+    elif connection_mode == "Gemini API（キーを入力）":
+        api_key = st.text_input(
+            "Gemini API Key",
+            type="password",
+            help="入力したキーはセッション中だけ使用し、保存しません。",
+        )
+        if api_key:
+            st.success("入力されたAPIキーを使用します")
+        ai_mode = "Gemini API"
     else:
         local_url = st.text_input("Local API Endpoint", value=LOCAL_ENDPOINT)
+        ai_mode = "Local LLM"
 
     st.divider()
     st.caption("研究用プロトタイプです。外部APIへ未公開・機密情報を送信しないでください。")
@@ -240,28 +318,68 @@ input_tab, regulation_tab, observation_tab, ctq_tab = st.tabs(
 
 with input_tab:
     st.header("Estimand情報")
+
+    if st.button("この模擬プロトコルを用いて解析する"):
+        if not os.path.exists(DEMO_PROTOCOL_PATH):
+            st.error("模擬プロトコルが見つかりません。")
+        else:
+            demo_ice_table = pd.DataFrame(DEMO_ICE_ROWS)
+            st.session_state.treatment_input = DEMO_TREATMENT
+            st.session_state.population_input = DEMO_POPULATION
+            st.session_state.variable_input = DEMO_VARIABLE
+            st.session_state.population_summary_input = DEMO_SUMMARY
+            st.session_state.ice_table = demo_ice_table
+            st.session_state.pop("ice_editor", None)
+            st.session_state.protocol_text = extract_pdf_path(DEMO_PROTOCOL_PATH)
+            st.session_state.sap_text = ""
+            st.session_state.estimand_input = estimand_context(
+                DEMO_TREATMENT,
+                DEMO_POPULATION,
+                DEMO_VARIABLE,
+                DEMO_SUMMARY,
+                demo_ice_table,
+            )
+            for result_key in [
+                "regulation_result",
+                "observation_result",
+                "ctq_result",
+                "regulation_raw",
+                "observation_raw",
+                "ctq_raw",
+            ]:
+                st.session_state.pop(result_key, None)
+            st.session_state.demo_protocol_loaded = True
+            st.session_state.demo_loaded_notice = True
+            st.rerun()
+
+    if st.session_state.pop("demo_loaded_notice", False):
+        st.success(
+            "模擬プロトコルと対応するEstimandを読み込みました。"
+            "「2. 関連規定」から解析を開始できます。"
+        )
+
     col_a, col_b = st.columns(2)
     with col_a:
         treatment = st.text_area(
             "関心のある治療条件",
-            value="ペムブロリズマブ（200 mg、3週ごと静注）と治験薬Xの併用療法",
+            key="treatment_input",
             height=110,
         )
         population = st.text_area(
             "対象集団",
-            value="適格基準を満たし、治験薬が1回以上投与された対象患者",
+            key="population_input",
             height=110,
         )
     with col_b:
         variable = st.text_area(
             "個人レベルの変数",
-            value="中央判定による確定された客観的奏効",
+            key="variable_input",
             height=110,
         )
         with st.expander("集団レベルの要約（任意・参考情報）"):
             population_summary = st.text_area(
                 "集団レベルの要約",
-                value="",
+                key="population_summary_input",
                 placeholder="例：奏効割合の点推定値と95%信頼区間",
                 help="主要なマッピング軸には使用せず、SAPとの整合性確認などの参考情報として扱います。",
             )
@@ -312,6 +430,7 @@ with input_tab:
             try:
                 st.session_state.protocol_text = extract_pdf(protocol_file)
                 st.session_state.sap_text = extract_pdf(sap_file)
+                st.session_state.demo_protocol_loaded = False
                 st.session_state.estimand_input = estimand_context(
                     treatment, population, variable, population_summary, edited_ice
                 )
