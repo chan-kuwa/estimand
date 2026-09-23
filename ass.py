@@ -396,7 +396,7 @@ with input_tab:
     source_options = ["Protocol", "SAP", "ProtocolとSAP", "ユーザー入力", "未確認"]
     with st.expander("中間事象（ICE）とStrategyの詳細設定（任意）"):
         st.caption(
-            "未入力のまま解析できます。文書から抽出されたICE候補を確認した後、必要に応じて追加してください。"
+            "ICEとStrategyを解析に含める場合のみ入力してください。未入力の場合、ICEに関する解析は行いません。"
         )
         edited_ice = st.data_editor(
             st.session_state.ice_table,
@@ -476,6 +476,9 @@ with regulation_tab:
 - Estimand関連規定には、「治療条件」「対象集団」「変数」のうち少なくとも1つを必ず対応づける。
 - 複数要素に関係する場合は配列に複数記載する。
 - 安全性規定はEstimandに無理に関連づけず、関連がある場合だけ対応要素を記載する。
+- ICEとして扱うのは入力Estimandに記載された事象だけとする。未入力の場合はICEとの関連を付けない。
+- ProtocolやSAPに中止、救済治療、死亡などの記載があっても、未入力の事象をICEとして抽出・推測しない。
+- 入力されたICEとStrategyに関係する文書規定だけを必要に応じて対応づける。
 
 【Estimand情報】
 {st.session_state.estimand_input}
@@ -488,10 +491,6 @@ with regulation_tab:
 【安全性規定の抽出範囲】
 治療開始・継続基準、休薬・減量・再開・中止基準、AE/SAEの定義・評価期間・報告、
 安全性検査、妊娠・過量投与等の特別な状況、安全性追跡を対象とする。
-
-【ICE候補】
-文書に明記されたICE、ICEとなる可能性がある事象、単なる欠測・評価不能、
-評価項目を構成するイベントを区別する。Strategyが明記されていなければ推測せず「未記載」とする。
 
 【出力形式】
 Markdownを付けず、以下のキーを持つ正しいJSONオブジェクトだけを出力する。
@@ -521,18 +520,6 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
       "章・項": "",
       "ページ": "",
       "原文引用": ""
-    }}
-  ],
-  "ice_candidates": [
-    {{
-      "事象": "",
-      "区分": "ICE候補",
-      "主に関係するEstimand要素": [],
-      "文書上のStrategy": "未記載",
-      "根拠": "",
-      "文書": "Protocol",
-      "章・項": "",
-      "ページ": ""
     }}
   ],
   "notes": []
@@ -568,9 +555,6 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
             st.caption("Estimandとの関連は、実際に関係する場合だけ表示します。")
             show_table(result.get("safety_regulations", []), "安全性規定は抽出されませんでした。")
 
-            st.subheader("中間事象（ICE）候補")
-            st.caption("Strategyは文書に明記されている場合だけ表示し、欠測等とは区別します。")
-            show_table(result.get("ice_candidates", []), "ICE候補は抽出されませんでした。")
             if result.get("notes"):
                 st.write("補足:", result["notes"])
         else:
@@ -705,8 +689,8 @@ with ctq_tab:
 - 文書に手順があるという理由だけでCTQにしない。試験目的の解釈または被験者保護への重要性を根拠で示す。
 - SAE報告等は試験運営ではなく、主目的が被験者保護であれば「安全性・被験者保護」に分類する。
 - 治療条件、対象集団、変数に関係する実施プロセスは「Estimand解釈」に分類し、対応要素を保持する。
-- Strategy未記載、文書間不一致、確認方法未特定等は、原則としてCTQではなく
-  「仕様不足・不整合・要確認事項」に分ける。
+- 入力されていないICEやStrategyを文書から推測しない。
+- 記述の不足や不整合を独立した抽出対象にしない。
 - 規定から直接導けるCTQ候補と、将来起こり得るリスク事象を混同しない。
 - 候補ごとに根拠規定IDと、専門家が確認すべき不確実性を示す。
 
@@ -735,17 +719,6 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
       "根拠": "",
       "推論区分": "規定・観測情報から論理的に導出",
       "専門家確認事項": ""
-    }}
-  ],
-  "specification_issues": [
-    {{
-      "ID": "G-01",
-      "区分": "仕様不足",
-      "対象": "ICE Strategy",
-      "確認事項": "",
-      "根拠規定ID": [],
-      "根拠": "",
-      "CTQ候補としない理由": ""
     }}
   ],
   "notes": []
@@ -790,12 +763,6 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
                 "提示された情報からリスク候補は導出されませんでした。",
             )
 
-            st.subheader("仕様不足・不整合・要確認事項")
-            st.caption("ICE Strategy未記載などをCTQへ自動的に格上げせず、別に表示します。")
-            show_table(
-                result.get("specification_issues", []),
-                "仕様不足・不整合・要確認事項は抽出されませんでした。",
-            )
             if result.get("notes"):
                 st.write("補足:", result["notes"])
         else:
