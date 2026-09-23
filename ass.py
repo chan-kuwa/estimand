@@ -387,7 +387,6 @@ with input_tab:
             st.session_state.ice_table = demo_ice_table
             st.session_state.pop("ice_editor", None)
             st.session_state.protocol_text = extract_pdf_path(DEMO_PROTOCOL_PATH)
-            st.session_state.sap_text = ""
             st.session_state.estimand_input = estimand_context(
                 DEMO_TREATMENT,
                 DEMO_POPULATION,
@@ -457,7 +456,7 @@ with input_tab:
                 "集団レベルの要約",
                 key="population_summary_input",
                 placeholder="例：奏効割合の点推定値と95%信頼区間",
-                help="主要なマッピング軸には使用せず、SAPとの整合性確認などの参考情報として扱います。",
+                help="主要な規定探索の軸には使用せず、Estimandの背景情報として扱います。",
             )
 
     strategy_options = [
@@ -469,7 +468,7 @@ with input_tab:
         "未決定",
         "その他・複合的な取扱い",
     ]
-    source_options = ["Protocol", "SAP", "ProtocolとSAP", "ユーザー入力", "未確認"]
+    source_options = ["Protocol", "ユーザー入力", "未確認"]
     with st.expander("中間事象（ICE）とStrategyの詳細設定（任意）"):
         st.caption(
             "ICEとStrategyを解析に含める場合のみ入力してください。未入力の場合、ICEに関する解析は行いません。"
@@ -496,8 +495,6 @@ with input_tab:
 
     st.subheader("対象文書")
     protocol_file = st.file_uploader("Protocol PDF（必須）", type="pdf", key="protocol_file")
-    sap_file = st.file_uploader("SAP PDF（任意）", type="pdf", key="sap_file")
-    st.caption("ProtocolとSAPは別文書として扱い、出典を保持します。SAPの解析記述から実施要件を自動生成しません。")
 
     if st.button("文書を読み込む", type="primary"):
         if protocol_file is None:
@@ -505,7 +502,6 @@ with input_tab:
         else:
             try:
                 st.session_state.protocol_text = extract_pdf(protocol_file)
-                st.session_state.sap_text = extract_pdf(sap_file)
                 st.session_state.demo_protocol_loaded = False
                 st.session_state.estimand_input = estimand_context(
                     treatment, population, variable, population_summary, edited_ice
@@ -513,10 +509,7 @@ with input_tab:
                 st.session_state.pop("regulation_result", None)
                 st.session_state.pop("observation_result", None)
                 st.session_state.pop("ctq_result", None)
-                message = "Protocolを読み込みました。"
-                if sap_file is not None:
-                    message += " SAPも別文書として読み込みました。"
-                st.success(message)
+                st.success("Protocolを読み込みました。")
             except Exception as error:
                 st.error(f"PDFの読み込みに失敗しました: {error}")
 
@@ -529,14 +522,9 @@ with regulation_tab:
     if "protocol_text" not in st.session_state:
         st.info("先に「1. 入力」で文書を読み込んでください。")
     elif st.button("関連規定を抽出", type="primary"):
-        sap_section = (
-            st.session_state.sap_text[:60000]
-            if st.session_state.get("sap_text")
-            else "SAPはアップロードされていません。"
-        )
         prompt = f"""
 あなたは臨床試験文書のレビューを支援する専門家です。
-以下のEstimandの各要素を起点に、Protocolおよび任意のSAPから対応する規定を探してください。
+以下のEstimandの各要素を起点に、Protocolから対応する規定を探してください。
 
 【目的】
 1. 関心のある治療、対象集団、変数のそれぞれについて、推定結果の解釈に関係する規定を探して抽出する。
@@ -545,15 +533,13 @@ with regulation_tab:
 【重要な制約】
 - 文書にない規定を一般的なGCP知識や経験から補完しない。
 - Strategyは中間事象を踏まえた治療効果の定義上の取扱いであり、現場への実施指示と混同しない。
-- SAPの解析上の記述から、施設や担当者が実施すべき要件を新たに作らない。
-- ProtocolとSAPの出典を混ぜない。
 - 各記述に文書名、章・項番号、ページ番号、短い原文引用を付す。
 - 不明な場合は「不明」、記載がない場合は「該当記載なし」とする。
 - 見つかったEstimand関連規定には、探索の起点となった「関心のある治療」「対象集団」「変数」の要素を記載する。
 - 複数要素に関係する場合は配列に複数記載する。対応する規定が見つからない要素については、無理に規定を補わない。
 - 安全性規定はEstimandに無理に関連づけず、関連がある場合だけ対応要素を記載する。
 - ICEとして扱うのは入力Estimandに記載された事象だけとする。未入力の場合はICEとの関連を付けない。
-- ProtocolやSAPに中止、救済治療、死亡などの記載があっても、未入力の事象をICEとして抽出・推測しない。
+- Protocolに中止、救済治療、死亡などの記載があっても、未入力の事象をICEとして抽出・推測しない。
 - 入力されたICEとStrategyに関係する文書規定だけを必要に応じて対応づける。
 
 【Estimand情報】
@@ -604,8 +590,6 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
 【Protocol】
 {st.session_state.protocol_text[:80000]}
 
-【SAP】
-{sap_section}
 """
         try:
             with st.spinner("関連規定を抽出しています..."):
