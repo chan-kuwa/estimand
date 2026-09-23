@@ -245,13 +245,13 @@ def show_table(records, empty_message):
 def estimand_context(treatment, population, variable, summary, ice_rows):
     summary_text = summary.strip() if summary.strip() else "未入力（任意項目）"
     return f"""
-【関心のある治療条件】
+【関心のある治療】
 {treatment}
 
 【対象集団】
 {population}
 
-【個人レベルの変数】
+【変数】
 {variable}
 
 【中間事象とStrategy】
@@ -339,6 +339,35 @@ Estimandを手がかりに関連する規定を探し、試験結果が正しく
 )
 st.warning("AI出力には誤りや過剰な推論が含まれ得ます。必ず原文と照合してください。")
 
+st.markdown("""
+<style>
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0.45rem;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding: 0.3rem 0.1rem 0.65rem;
+}
+.stTabs button[role="tab"] {
+    flex-shrink: 0;
+    min-height: 2.9rem;
+    padding: 0.45rem 0.9rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.7rem;
+    background: #f8fafc;
+    color: #334155;
+    font-weight: 600;
+}
+.stTabs button[role="tab"][aria-selected="true"] {
+    border-color: #b42318;
+    background: #fff1f0;
+    color: #9f1d15;
+}
+.stTabs [data-baseweb="tab-highlight"] {
+    display: none;
+}
+</style>
+""", unsafe_allow_html=True)
+st.caption("下のタブをタップして、1から4の順に進めてください。スマートフォンではタブを横にスクロールできます。")
 input_tab, regulation_tab, observation_tab, ctq_tab = st.tabs(
     ["1. 入力", "2. 関連規定", "3. 観測情報", "4. CTQ・レポート"]
 )
@@ -385,10 +414,30 @@ with input_tab:
             "「2. 関連規定」から解析を開始できます。"
         )
 
+    if st.session_state.get("demo_protocol_loaded") and os.path.exists(DEMO_PROTOCOL_PATH):
+        with st.expander("模擬プロトコルの内容を確認する"):
+            st.link_button(
+                "模擬プロトコルをPDFで開く",
+                "https://github.com/chan-kuwa/estimand/raw/refs/heads/main/demo_protocol_ra_das28.pdf",
+            )
+            with open(DEMO_PROTOCOL_PATH, "rb") as demo_file:
+                st.download_button(
+                    "模擬プロトコルをダウンロード",
+                    data=demo_file.read(),
+                    file_name="demo_protocol_ra_das28.pdf",
+                    mime="application/pdf",
+                )
+            st.text_area(
+                "本文のテキスト表示",
+                value=st.session_state.protocol_text,
+                height=320,
+                disabled=True,
+            )
+
     col_a, col_b = st.columns(2)
     with col_a:
         treatment = st.text_area(
-            "関心のある治療条件",
+            "関心のある治療",
             key="treatment_input",
             height=110,
         )
@@ -399,7 +448,7 @@ with input_tab:
         )
     with col_b:
         variable = st.text_area(
-            "個人レベルの変数",
+            "変数",
             key="variable_input",
             height=110,
         )
@@ -474,7 +523,7 @@ with input_tab:
 with regulation_tab:
     st.header("関連規定の抽出")
     st.write(
-        "入力した文書から、Estimandの解釈と安全性・被験者保護に関わる規定を探します。"
+        "入力した文書から、Estimandに関わる規定と、有害事象発生時の対応に関する規定を抽出します。"
     )
 
     if "protocol_text" not in st.session_state:
@@ -500,7 +549,7 @@ with regulation_tab:
 - ProtocolとSAPの出典を混ぜない。
 - 各記述に文書名、章・項番号、ページ番号、短い原文引用を付す。
 - 不明な場合は「不明」、記載がない場合は「該当記載なし」とする。
-- Estimand関連規定には、「治療条件」「対象集団」「変数」のうち少なくとも1つを必ず対応づける。
+- Estimand関連規定には、「関心のある治療」「対象集団」「変数」のうち少なくとも1つを必ず対応づける。
 - 複数要素に関係する場合は配列に複数記載する。
 - 安全性規定はEstimandに無理に関連づけず、関連がある場合だけ対応要素を記載する。
 - ICEとして扱うのは入力Estimandに記載された事象だけとする。未入力の場合はICEとの関連を付けない。
@@ -511,7 +560,7 @@ with regulation_tab:
 {st.session_state.estimand_input}
 
 【Estimand要素の分類定義】
-- 治療条件：投与、変更、休薬、中断、中止、併用条件など、実際に受ける治療に関する規定。
+- 関心のある治療：投与、変更、休薬、中断、中止、併用条件など、実際に受ける治療に関する規定。
 - 対象集団：適格性、除外条件、診断、解析対象集団への所属・採否に関する規定。
 - 変数：患者ごとの結果を意図した定義、方法、時点、判定手順で取得・導出するための規定。
 
@@ -525,7 +574,7 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
   "estimand_regulations": [
     {{
       "ID": "E-01",
-      "Estimand要素": ["治療条件"],
+      "Estimand要素": ["関心のある治療"],
       "関連ICE": "",
       "規定の要約": "",
       "規定種別": "",
@@ -575,10 +624,10 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
         result = st.session_state.regulation_result
         if isinstance(result, dict):
             st.subheader("Estimand関連規定")
-            st.caption("各規定を治療条件・対象集団・変数の少なくとも1つに対応づけています。")
+            st.caption("各規定を関心のある治療・対象集団・変数の少なくとも1つに対応づけています。")
             show_table(result.get("estimand_regulations", []), "関連規定は抽出されませんでした。")
 
-            st.subheader("安全性・被験者保護規定")
+            st.subheader("安全性規定")
             st.caption("Estimandとの関連は、実際に関係する場合だけ表示します。")
             show_table(result.get("safety_regulations", []), "安全性規定は抽出されませんでした。")
 
@@ -590,7 +639,7 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
 with observation_tab:
     st.header("観測・確認すべき情報の特定")
     st.write(
-        "関連規定から、維持されるべき状態と、何を観測・確認すべきかの候補を整理します。"
+        "抽出した規定をもとに、Estimandに沿って結果を解釈できるか、また有害事象発生時に規定どおり対応しているかを確認するための情報を整理します。"
     )
 
     if "regulation_result" not in st.session_state:
@@ -612,7 +661,7 @@ with observation_tab:
 - 一般的なGCP要求事項を根拠なく追加しない。
 - 観測方法を特定できない場合も候補から除外せず、「要専門家検討」とする。
 - 元の規定IDを必ず保持する。
-- Estimand側では元の「治療条件」「対象集団」「変数」の対応を必ず保持する。
+- Estimand側では元の「関心のある治療」「対象集団」「変数」の対応を必ず保持する。
 
 【ICEについて必ず分ける項目】
 1. ICEの発生を特定する情報
@@ -681,7 +730,7 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
                 result.get("estimand_observations", []),
                 "Estimand関連の観測情報は抽出されませんでした。",
             )
-            st.subheader("安全性・被験者保護に関する観測情報")
+            st.subheader("安全性に関する観測情報")
             show_table(
                 result.get("safety_observations", []),
                 "安全性関連の観測情報は抽出されませんでした。",
@@ -709,6 +758,9 @@ with ctq_tab:
 以下の結果を基に、専門家がレビューすべきCTQ要因とリスク候補を整理してください。
 
 【制約】
+- CTQ要因候補は、試験結果の解釈または安全性のために維持・確認されるべき状態として、「～が確保されている状態」「～が適切に把握できる状態」など、具体的な状態を表す文で記述する。
+- 「重要な状態」には、そのCTQ要因について規定から確認したい具体的な状態を記載する。
+- ICEや有害事象が発生しないことを当然の維持目標とせず、発生時の取り扱いや必要な情報を確認できる状態を記述する。
 - CTQ要因を単一データ名、単一手順、個別逸脱名として表現しない。
 - CTQの主目的区分は「Estimand解釈」と「安全性」の2区分だけとする。
 - 登録、適格性確認、投与記録、画像転送、SAE報告等の運営プロセスは、
@@ -717,13 +769,13 @@ with ctq_tab:
 - モニタリング手法、担当者、頻度、閾値、リスク低減策は決定しない。
 - 文書に手順があるという理由だけでCTQにしない。試験目的の解釈または被験者の安全性への重要性を根拠で示す。
 - SAE報告等は試験運営ではなく、主目的が被験者の安全性確保であれば「安全性規定」に分類する。
-- 治療条件、対象集団、変数に関係する実施プロセスは「Estimand解釈」に分類し、対応要素を保持する。
+- 関心のある治療、対象集団、変数に関係する実施プロセスは「Estimand解釈」に分類し、対応要素を保持する。
 - 入力されていないICEやStrategyを文書から推測しない。
 - 記述の不足や不整合を独立した抽出対象にしない。
 - 規定から直接導けるCTQ候補と、将来起こり得るリスク事象を混同しない。
 - 候補ごとに根拠規定IDと、専門家が確認すべき不確実性を示す。
 - 各CTQ候補には、下のCTTI参照データに実在する「カテゴリ」と「CTQ ファクター」の組を必ず記載する。
-- そのCTTI項目が本試験のどの特性（治療条件、対象集団、変数、入力されたICE、規定の内容）に関係するか、具体的に説明する。
+- そのCTTI項目が本試験のどの特性（関心のある治療、対象集団、変数、入力されたICE、規定の内容）に関係するか、具体的に説明する。
 - 本試験の特性と結びつかないCTTI項目を形式上だけで挙げない。CTTIの一般論だけからCTQを作らない。
 
 【出力形式】
@@ -734,7 +786,7 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
       "ID": "C-01",
       "主目的区分": "Estimand解釈",
       "関連Estimand要素": ["変数"],
-      "CTQ要因候補": "",
+      "CTQ要因候補": "必要な状態が確保・確認できる状態",
       "重要な状態": "",
       "関連する実施プロセス": "",
       "CTTI参照項目": [
@@ -797,7 +849,7 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
         result = st.session_state.ctq_result
         if isinstance(result, dict):
             st.subheader("CTQ要因候補")
-            st.caption("主目的はEstimand解釈または安全性・被験者保護です。")
+            st.caption("主目的はEstimand解釈または安全性です。")
             show_table(
                 result.get("ctq_candidates", []),
                 "提示された情報からCTQ候補は導出されませんでした。",
