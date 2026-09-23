@@ -304,10 +304,9 @@ with text_column:
 
 st.markdown(
     """
-本ツールは、Estimandに対応する規定をプロトコルから探索し、
-推定したいものを意図した通りに解釈するための要件とその状態を確認するための観測情報を段階的に整理します。
+Estimandを手がかりに関連する規定を探し、試験結果を解釈するために何を確認すべきか整理します。
 
-出力結果は専門家によるリスク評価と計画策定のための検討材料です。
+結果は、リスク評価やモニタリング計画を検討する際の参考にしてください。
 """
 )
 st.warning("AI出力には誤りや過剰な推論が含まれ得ます。必ず原文と照合してください。")
@@ -319,7 +318,7 @@ input_tab, regulation_tab, observation_tab, ctq_tab = st.tabs(
 with input_tab:
     st.header("Estimand情報")
 
-    if st.button("この模擬プロトコルを用いて解析する"):
+    if st.button("模擬プロトコルを用いて解析する"):
         if not os.path.exists(DEMO_PROTOCOL_PATH):
             st.error("模擬プロトコルが見つかりません。")
         else:
@@ -447,7 +446,7 @@ with input_tab:
 with regulation_tab:
     st.header("関連規定の抽出")
     st.write(
-        "規定を「Estimand関連」と「安全性・被験者保護」に分け、原文に忠実な候補を表で表示します。"
+        "入力した文書から、Estimandの解釈と安全性・被験者保護に関わる規定を探します。"
     )
 
     if "protocol_text" not in st.session_state:
@@ -811,5 +810,5 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
 
 st.divider()
 st.caption(
-    "研究用プロトタイプ：本ツールの出力は臨床・統計・規制上の判断、モニタリング計画または公式記録を代替しません。"
+    "研究用の試作ツールです。結果だけで臨床・統計・規制上の判断やモニタリング計画を決めないでください。公式記録としても使用しないでください。"
 )
