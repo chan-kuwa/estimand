@@ -111,18 +111,46 @@ def format_ice_rows(dataframe):
 
 def load_ctti_reference():
     if not os.path.exists(CTTI_PATH):
-        return ""
+        return "", set()
     try:
         sheets = pd.read_excel(CTTI_PATH, sheet_name=None)
         sheet_name = "日本語訳" if "日本語訳" in sheets else list(sheets.keys())[0]
         frame = sheets[sheet_name]
         columns = ["カテゴリ", "CTQ ファクター", "説明/理由"]
-        if all(column in frame.columns for column in columns):
-            return frame[columns].dropna(how="all").to_string(index=False)
-        return frame.head(100).to_string(index=False)
+        if not all(column in frame.columns for column in columns):
+            st.sidebar.warning("CTTI参照データの列を確認してください。")
+            return "", set()
+        frame = frame[columns].dropna(subset=["カテゴリ", "CTQ ファクター"]).fillna("")
+        factors = {
+            (str(row["カテゴリ"]).strip(), str(row["CTQ ファクター"]).strip())
+            for _, row in frame.iterrows()
+        }
+        return frame.to_string(index=False), factors
     except Exception as error:
         st.sidebar.warning(f"CTTI参照データを読み込めませんでした: {error}")
-        return ""
+        return "", set()
+
+
+def validate_ctq_references(result, factors):
+    if not isinstance(result, dict) or not isinstance(result.get("ctq_candidates"), list):
+        return "CTQ候補の形式を確認してください。"
+    for index, candidate in enumerate(result["ctq_candidates"], 1):
+        if not isinstance(candidate, dict):
+            return f"CTQ候補{index}の形式を確認してください。"
+        references = candidate.get("CTTI参照項目")
+        if not isinstance(references, list) or not references:
+            return f"CTQ候補{index}にCTTI参照項目がありません。"
+        for reference in references:
+            if not isinstance(reference, dict) or (
+                str(reference.get("カテゴリ", "")).strip(),
+                str(reference.get("CTQ ファクター", "")).strip(),
+            ) not in factors:
+                return f"CTQ候補{index}のCTTI参照項目が参照表と一致しません。"
+        if not str(candidate.get("本試験の特性", "")).strip():
+            return f"CTQ候補{index}に本試験の特性がありません。"
+        if not str(candidate.get("CTTI項目との結びつき", "")).strip():
+            return f"CTQ候補{index}にCTTI項目との結びつきがありません。"
+    return ""
 
 
 def call_ai(prompt, mode, api_key, local_url):
@@ -290,7 +318,7 @@ with st.sidebar:
 
     st.divider()
     st.caption("研究用プロトタイプです。外部APIへ未公開・機密情報を送信しないでください。")
-    ctti_reference = load_ctti_reference()
+    ctti_reference, ctti_factors = load_ctti_reference()
     if ctti_reference:
         st.success("CTTI参照データを読み込みました")
 
@@ -666,13 +694,16 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
 with ctq_tab:
     st.header("CTQ・リスク候補とレポート")
     st.write(
-        "CTQ候補、リスク候補を特定します。ここまで得られた結果とCTTIを参考に推論します。。"
+        "規定と観測情報をCTTIの項目と照らし合わせ、CTQとリスクの候補を整理します。"
     )
 
     if "observation_result" not in st.session_state:
         st.info("先に「3. 観測情報」を実行してください。")
     elif st.button("CTQ・リスク候補を整理"):
-        reference_section = ctti_reference[:30000] if ctti_reference else "CTTI参照データなし"
+        if not ctti_factors:
+            st.error("CTTI参照データを読み込めません。ファイルを確認してください。")
+            st.stop()
+        reference_section = ctti_reference
         prompt = f"""
 あなたは臨床試験のRBQM検討を支援する専門家です。
 以下の結果を基に、専門家がレビューすべきCTQ要因とリスク候補を整理してください。
@@ -691,6 +722,9 @@ with ctq_tab:
 - 記述の不足や不整合を独立した抽出対象にしない。
 - 規定から直接導けるCTQ候補と、将来起こり得るリスク事象を混同しない。
 - 候補ごとに根拠規定IDと、専門家が確認すべき不確実性を示す。
+- 各CTQ候補には、下のCTTI参照データに実在する「カテゴリ」と「CTQ ファクター」の組を必ず記載する。
+- そのCTTI項目が本試験のどの特性（治療条件、対象集団、変数、入力されたICE、規定の内容）に関係するか、具体的に説明する。
+- 本試験の特性と結びつかないCTTI項目を形式上だけで挙げない。CTTIの一般論だけからCTQを作らない。
 
 【出力形式】
 Markdownを付けず、以下のキーを持つ正しいJSONオブジェクトだけを出力する。
@@ -703,6 +737,11 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
       "CTQ要因候補": "",
       "重要な状態": "",
       "関連する実施プロセス": "",
+      "CTTI参照項目": [
+        {{"カテゴリ": "プロトコルデザイン", "CTQ ファクター": "適格基準"}}
+      ],
+      "本試験の特性": "",
+      "CTTI項目との結びつき": "",
       "根拠規定ID": ["E-01"],
       "根拠": "",
       "専門家が確認すべき不確実性": ""
@@ -735,12 +774,22 @@ Markdownを付けず、以下のキーを持つ正しいJSONオブジェクト�
             with st.spinner("CTQ・リスク候補を整理しています..."):
                 raw_result = call_ai(prompt, ai_mode, api_key, local_url)
                 try:
-                    st.session_state.ctq_result = parse_json_response(raw_result)
-                    st.session_state.pop("ctq_raw", None)
+                    parsed_result = parse_json_response(raw_result)
                 except Exception:
                     st.session_state.ctq_raw = raw_result
-                    st.session_state.ctq_result = raw_result
-                    st.warning("表形式への変換に失敗したため、AIの原文を表示します。")
+                    st.session_state.pop("ctq_result", None)
+                    st.warning("表形式への変換に失敗しました。AIの原文を確認してください。")
+                    st.text(raw_result)
+                else:
+                    reference_error = validate_ctq_references(parsed_result, ctti_factors)
+                    if reference_error:
+                        st.session_state.pop("ctq_result", None)
+                        st.session_state.ctq_raw = raw_result
+                        st.error(f"{reference_error} 再実行するか、原文を確認してください。")
+                        st.text(raw_result)
+                    else:
+                        st.session_state.ctq_result = parsed_result
+                        st.session_state.pop("ctq_raw", None)
         except Exception as error:
             st.error(f"解析に失敗しました: {error}")
 
