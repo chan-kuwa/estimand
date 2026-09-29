@@ -291,21 +291,11 @@ with st.sidebar:
     st.header("AI接続設定")
     connection_mode = st.radio(
         "接続方法",
-        ["Gemini API（Secrets）", "Gemini API（キーを入力）", "Local LLM"],
+        ["Gemini API（キーを入力）", "Local LLM"],
     )
     api_key = ""
     local_url = LOCAL_ENDPOINT
-    if connection_mode == "Gemini API（Secrets）":
-        try:
-            api_key = st.secrets.get("GOOGLE_API_KEY", "")
-        except Exception:
-            api_key = ""
-        if api_key:
-            st.success("Streamlit SecretsのAPIキーを読み込みました")
-        else:
-            st.warning("Streamlit SecretsにGOOGLE_API_KEYが設定されていません。")
-        ai_mode = "Gemini API"
-    elif connection_mode == "Gemini API（キーを入力）":
+    if connection_mode == "Gemini API（キーを入力）":
         api_key = st.text_input(
             "Gemini API Key",
             type="password",
